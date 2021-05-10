@@ -61,3 +61,8 @@ docs/*
 !*.bib
 !*.pdf
 !docs/img/*.*
+
+# Built shader files
+*.oso
+
+*.pdn

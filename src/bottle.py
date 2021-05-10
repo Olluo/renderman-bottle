@@ -1,5 +1,35 @@
 import argparse
 import prman
+import os
+import sys
+import subprocess
+
+
+def compile_shader(shader: str):
+    """Checks and compiles a shader file (osl) into an object file (oso) to be used by Renderman.
+
+    Args:
+        shader (str): The name of the shader
+    """
+    if not os.path.isfile(shader+'.oso') or os.stat(shader+'.osl').st_mtime - os.stat(shader+'.oso').st_mtime > 0:
+        try:
+            subprocess.check_call(['oslc', shader + '.osl'])
+        except subprocess.CalledProcessError as err:
+            sys.exit('Shader compilation failed: {0}'.format(err))
+
+
+def color(red: int, green: int, blue: int):
+    """Create a Renderman color list from values < 255.
+
+    Args:
+        red (int): The red value
+        green (int): The green value
+        blue (int): The blue value
+
+    Returns:
+        List of floats of the color values divided by 255.0
+    """
+    return [red / 255.0, green / 255.0, blue / 255.0]
 
 
 class BottleMaker:
@@ -32,9 +62,9 @@ class BottleMaker:
             sy (float, optional): Y scale. Defaults to 1.
             sz (float, optional): Z scale. Defaults to 1.
         """
-        body_height = height * 0.8
-        cap_height = 0.2
-        cap_radius = radius - 0.01
+        self.body_height = height * 0.8
+        self.cap_height = 0.2
+        self.cap_radius = radius - 0.01
 
         self.ri.ArchiveRecord(self.ri.COMMENT, 'Drawing bottle')
         self.ri.TransformBegin()
@@ -47,39 +77,106 @@ class BottleMaker:
         self.ri.Rotate(rz, 0, 0, 1)
 
         self._draw_cylinder_component('bottleBody', self._body_shader,
-                                      radius, body_height)
-        self._draw_cylinder_component('bottleCapBottom', self._cap_bottom_shader,
-                                      cap_radius, cap_height,
-                                      y=body_height)
-        self._draw_cylinder_component('bottleCapTop', self._cap_top_shader,
-                                      cap_radius, cap_height,
-                                      y=body_height + cap_height)
-        self._draw_cylinder_component('bottleCapLock', self._cap_lock_shader,
-                                      0.25, cap_height,
-                                      y=body_height + cap_height, z=-cap_radius * 1.1,
-                                      sx=0.4, sy=0.6, rx=0)
+                                      radius, self.body_height)
+        # self._draw_cylinder_component('bottleCapBottom', self._cap_bottom_shader,
+        #                               self.cap_radius, self.cap_height,
+        #                               y=self.body_height)
+        # self._draw_cylinder_component('bottleCapTop', self._cap_top_shader,
+        #                               self.cap_radius, self.cap_height,
+        #                               y=self.body_height + self.cap_height)
+        # self._draw_cylinder_component('bottleCapLock', self._cap_lock_shader,
+        #                               0.25, self.cap_height,
+        #                               y=self.body_height + self.cap_height, z=-self.cap_radius * 1.1,
+        #                               sx=0.4, sy=0.6, rx=0)
 
         self.ri.ArchiveRecord(self.ri.COMMENT, 'End of bottle drawing')
         self.ri.TransformEnd()
 
     def _body_shader(self):
+        compile_shader('bodyShape')
+
         self.ri.CoordinateSystem("bodyCoordinates")
 
         # Apply displacement to round shape and create cap attachment
+        self.ri.Pattern('bodyShape', 'bodyTx')
+        self.ri.Attribute('displacementbound',
+                          {
+                              'sphere': [0.2],
+                              'coordinatesystem': ['object']
+                          })
+        self.ri.Displace('PxrDisplace', 'bodyDisplace',
+                         {
+                             'float dispAmount': [0.09],
+                             'reference float dispScalar': ['bodyTx:result']
+                         })
 
-        # Apply pattern for texture
+        # Create base layer
+        self.ri.Pattern('PxrLayer', 'bodyColor',
+                        {
+                            'int enableDiffuse': [1],
+                            'int enableDiffuseAlways': [1],
+                            'color diffuseColor': color(10, 0, 16),
+                            'float diffuseGain': [1.0],
+                        })
 
-        # Apply pattern for scratches
+        # Create layer for texture
+        self.ri.Pattern('PxrTexture', 'bodyLabelTexture',
+                        {
+                            'string filename': ['../img/bottle_4k.tx'],
+                            'int linearize': [1],
+                        })
 
-        # Apply pattern for scuffs
+        # Create layer for scratches
+
+        # Create layer for scuffs
+
+        # Mix all the layers
+        self.ri.Pattern('PxrLayerMixer', 'bodyMix',
+                        {
+                            'int enableDiffuseAlways': [1],
+                            'int baselayer_enableDiffuse': [1],
+                            'reference color baselayer_diffuseColor': ['bodyColor:pxrMaterialOut_diffuseColor'],
+                            'reference float baselayer_diffuseGain': ["bodyColor:pxrMaterialOut_diffuseGain"],
+                            'int layer1Enabled': [1],
+                            'int layer1_enableDiffuse': [1],
+                            'reference color layer1_diffuseColor': ['bodyLabelTexture:resultRGB'],
+                            'reference float layer1Mask': ['bodyLabelTexture:resultA'],
+                            'float layer1_diffuseGain':  [0.5],
+                        })
 
         # Apply BXDF
-        self.ri.Bxdf('PxrSurface', 'plastic',
-                     {'color diffuseColor': [25/255.0, 0/255.0, 51/255.0],
-                      'float diffuseRoughness': [0.75], })
+        self.ri.Bxdf('PxrLayerSurface', 'plastic',
+                     {
+                         'reference float diffuseGain': ['bodyMix:pxrMaterialOut_diffuseGain'],
+                         'reference color diffuseColor': ['bodyMix:pxrMaterialOut_diffuseColor'],
+                         'float diffuseRoughness': [0.4],
+                         'float diffuseExponent': [1.0],
+                         'int specularFresnelMode': [1],
+                         'color specularEdgeColor': [0.1, 0, 0.2],
+                         'float specularRoughness': [0.4],
+                         'float refractionGain': [0.8],
+                         'color refractionColor': color(140, 20, 180),
+                         'float reflectionGain': [0.05],
+                         'float glassRoughness': [0.22],
+                     })
 
     def _cap_bottom_shader(self):
+        compile_shader('capBottomShape')
+
         self.ri.CoordinateSystem("capBottomCoordinates")
+
+        # Apply displacement to create bottom cap shape
+        self.ri.Pattern('capBottomShape', 'capBottomTx')
+        self.ri.Attribute('displacementbound',
+                          {
+                              'sphere': [0.2],
+                              'coordinatesystem': ['object']
+                          })
+        # self.ri.Displace('PxrDisplace', 'capBottomDisplace',
+        #                  {
+        #                      'float dispAmount': [0.09],
+        #                      'reference float dispScalar': ['capBottomTx:result']
+        #                  })
 
         # Apply displacement to round edges
 
@@ -92,14 +189,19 @@ class BottleMaker:
         # Apply pattern for scuffs
 
         # Apply BXDF for rubber band
-        self.ri.Bxdf('PxrSurface', 'rubber',
-                     {'color diffuseColor': [0.0, 1.0, 1.0],
-                      'float diffuseRoughness': [0.75], })
+        # self.ri.Bxdf('PxrSurface', 'rubber',
+        #              {
+        #                  'color diffuseColor': [0.0, 1.0, 1.0],
+        #                  'float diffuseRoughness': [0.75],
+        #              })
 
         # Apply BXDF for black plastic
         self.ri.Bxdf('PxrSurface', 'blackPlastic',
-                     {'color diffuseColor': [0.0, 1.0, 1.0],
-                      'float diffuseRoughness': [0.75], })
+                     {
+                        #  'color diffuseColor': [0.0, 1.0, 1.0],
+                         'reference color diffuseColor': ['capBottomTx:resultC'],
+                         'float diffuseRoughness': [0.75],
+                     })
 
     def _cap_top_shader(self):
         self.ri.CoordinateSystem("capTopCoordinates")
@@ -118,8 +220,10 @@ class BottleMaker:
 
         # Apply BXDF
         self.ri.Bxdf('PxrSurface', 'clearPlastic',
-                     {'color diffuseColor': [0.0, 1.0, 0.0],
-                      'float diffuseRoughness': [0.2], })
+                     {
+                         'color diffuseColor': [0.0, 1.0, 0.0],
+                         'float diffuseRoughness': [0.2],
+                     })
 
     def _cap_lock_shader(self):
         self.ri.CoordinateSystem("capLockCoordinates")
@@ -136,8 +240,10 @@ class BottleMaker:
 
         # Apply BXDF
         self.ri.Bxdf('PxrSurface', 'blackPlastic',
-                     {'color diffuseColor': [1.0, 1.0, 0.0],
-                      'float diffuseRoughness': [0.2], })
+                     {
+                         'color diffuseColor': [1.0, 1.0, 0.0],
+                         'float diffuseRoughness': [0.2],
+                     })
 
     def _draw_cylinder_component(self, name: str, shader,
                                  radius: float, height: float,
@@ -237,20 +343,31 @@ class TableMaker:
         self.ri.AttributeEnd()
 
     def _shader(self):
+        compile_shader('wood')
+
         self.ri.CoordinateSystem("tableCoordinates")
 
         # Apply displacement to round corners
 
         # Apply pattern for texture
+        ri.Pattern('wood', 'woodPattern',
+                   {
+                       'color Cin': [1, 1, 1],
+                       'float scale': [4],
+                       'float freq': [2],
+                       'float variation': [0.02],
+                   })
 
         # Apply pattern for scratches
 
         # Apply pattern for scuffs
 
         # Apply BXDF
-        self.ri.Bxdf('PxrSurface', 'wood',
-                     {'color diffuseColor': [1, 0.6, 0.5],
-                      'float diffuseRoughness': [0.75], })
+        self.ri.Bxdf('PxrSurface', 'woodBxdf',
+                     {
+                         'reference color diffuseColor': ['woodPattern:Cout'],
+                         'float diffuseRoughness': [0.75],
+                     })
 
     def _cube(self, width: float = 1.0, height: float = 1.0, depth: float = 1.0):
         """Generates a cube. Modified from Cube.py by Jon Macey
@@ -305,7 +422,7 @@ class HdrLight():
 
         ri.Light("PxrDomeLight", "hdrLight",
                  {"float exposure": [0],
-                  "string lightColorMap": ["..\img\lookout_4k.tex"]})
+                  "string lightColorMap": ["..\img\lookout_4k.tx"]})
 
         ri.TransformEnd()
         ri.AttributeEnd()
@@ -317,7 +434,7 @@ if __name__ == "__main__":
         Example usage: "py -3.5 ./bottle.py -s 16 -rw 640 -rh 480"''')
     parser.add_argument('height', nargs='?', type=float, default=2.5,
                         help='The height of the larger bottle')
-    parser.add_argument('radius', nargs='?', type=float, default=0.4,
+    parser.add_argument('radius', nargs='?', type=float, default=0.3,
                         help='The radius of the bottles')
     parser.add_argument('-r', '--rib', action='store_true',
                         help='Output the code to a rib file instead of rendering')

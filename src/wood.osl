@@ -1,0 +1,21 @@
+shader wood (
+    color Cin=1,
+    float scale=1,
+    float freq=2,
+    float variation=0.05,
+    output color Cout=1
+)
+{
+    color lightWood=color("rgb",1,0.6,0.5);
+    color darkWood=color("rgb",0.3,0.2,0.2);
+    point PP;
+    float l;
+
+
+    PP=transform("shader",P)*scale;
+    PP=PP+(vector)noise("perlin",PP*freq)*variation;
+    PP=PP+(vector)noise("perlin",PP*freq*2.1)*variation/2.1;
+    l=sqrt(PP[0]*PP[0]+PP[1]*PP[1]);
+    Cout=mix(darkWood,lightWood,1-mod(l*8,1));
+}
+
