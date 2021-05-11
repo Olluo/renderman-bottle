@@ -2,26 +2,30 @@ shader bodyShape (
     output float result = 0
 ) 
 {
-    // the bottle is divided into 16ths
-    // from bottom to top
-    // 1/16 curve from 0 to 1
-    // 2/16 -> 14/16 white
-    // 15/16 curve from 1 to 0
-    // 16/16 mid point is 0.5, rest 0
-    float sixteenth = 0.0625;
-    if (v < 15 * sixteenth)
-    {
-        float curve = smoothstep(0, 1 * sixteenth, v) - smoothstep(14 * sixteenth, 15 * sixteenth, v);
-        // sqrt to get nice curve
-        result = sqrt(sqrt(curve));
-    }
-    else
-    {
-        float notch = 15 * sixteenth;
-        float notchBottom = notch + (3 * sixteenth / 5);
-        float notchTop = notch + sixteenth - (1 * sixteenth / 5);
-        float notchStep = step(notchBottom, v) - step(notchTop, v);
-        notchStep *= 0.5;
-        result = notchStep;
-    }
+    // ---------- Top and bottom curve displacement ----------
+    float bottomCurve = smoothstep(0, 0.08, v);
+    float topCurve = smoothstep(0.85, 0.9, v);
+    float curve = bottomCurve - topCurve;
+
+    // sqrt to get nicer curve
+    result += sqrt(sqrt(curve));
+
+    // ---------- Notch displacement ----------
+    float notchPos = 0.93;
+    float notchWidth = 0.015;
+    float notchBottom = notchPos - 0.5 * notchWidth;
+    float notchTop = notchPos + 0.5 * notchWidth;
+    float notch = 0.5 * (step(notchBottom, v) - step(notchTop, v));
+
+    result += notch;
+
+    // ---------- Threaded top displacement ----------
+    float threadStart = notchTop + 0.01;
+    float spiral = threadStart + u * 0.015;
+    float thread = 0.2 * (smoothstep(spiral - 0.01, spiral, v) - step(spiral + 0.01, v));
+    result += thread;
+
+    spiral = threadStart + 0.025 + u * 0.015;
+    thread = 0.2 * (smoothstep(spiral - 0.01, spiral, v) - step(spiral + 0.01, v));
+    result += thread;
 }

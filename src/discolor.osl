@@ -1,0 +1,14 @@
+shader discolor (
+    color Cin=1,
+    float pscale=2.5,
+    float discolorValue=0.8,
+    output color resultRGB=0,
+    output float resultA=0
+)
+{
+    point PP = P * pscale;
+    float discolor = (float)noise("perlin", PP);
+
+    resultRGB = mix(Cin, Cin * discolorValue, discolor);
+    resultA = discolor;
+}

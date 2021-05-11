@@ -1,41 +1,26 @@
 shader dirt (
-
-) 
+    color Cin=1,
+    float pscale=20.0,
+    float xscale=0.1,
+    float yscale=1,
+    float zscale=1,
+    float dirtValue=0.75,
+    float dirtCutoff=0.6,
+    output color resultRGB=0,
+    output float resultA=0
+)
 {
-      
-// shader legsShader(
-//     color colourIn = color(0,0,0),
-// 	float dispScale=0.00075,
-//     float dirtValue=0,
-//     int damage = 3,
-//     output color Cout=0,
-// 	output float resultDisplacement=0
-// )
-{
-    float fuzz=0.025;
-    float dist=0;
-    float inLine=0;
-	point PP=transform("legsCoords", P);
-	float s=PP[0];
-	float t=PP[1];
-    point here=point(u,v,0);
+    point PP = P * pscale;
+    PP[0] *= xscale;
+    PP[1] *= yscale;
+    PP[2] *= zscale;
 
-    // generate damage based on damage value
-    for(int i = 0; i < damage; ++i) 
+    float dirt = (float)noise("perlin", PP);
+
+    resultRGB = mix(Cin, Cin * dirtValue, dirt);
+
+    if (dirt > dirtCutoff)
     {
-        point start=point (cellnoise(s*i,t*i),cellnoise(s*i,t*i),0);
-        point end=point (cellnoise(0.5+(s*i),0.5+(t*i)),cellnoise(0.5+(s*i),0.5+(t*i)),0);
-        dist=distance(start,end,here);
-        inLine=1-smoothstep(0.01+fuzz,0.01-fuzz,dist);
+        resultA = dirt;
     }
-
-
-    //generate the dirt based on the dirtValue
-	point dirtSpace = point(P[0]* 10,P[1]* 10,P[2]* 10);
-	color dirtNoise = noise("perlin",dirtSpace);
-	float dirtAlpha = dirtNoise[0] * dirtValue;
-	color resultRGB = mix(colourIn,color(0,0,0),dirtAlpha);
-    Cout = resultRGB;
-
-    resultDisplacement = inLine * -dispScale;
 }
