@@ -65,4 +65,7 @@ docs/*
 # Built shader files
 *.oso
 
+# No need to include rib files as they are generated
+*.rib
+
 *.pdn
