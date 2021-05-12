@@ -7,6 +7,7 @@ import subprocess
 
 def compile_shader(shader: str):
     """Checks and compiles a shader file (osl) into an object file (oso) to be used by Renderman.
+    Modified from Jon Macey's version.
 
     Args:
         shader (str): The name of the shader

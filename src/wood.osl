@@ -1,3 +1,5 @@
+// Taken from lectures, original by Ian Stephenson
+
 shader wood (
     color Cin=1,
     float scale=1,
